@@ -300,20 +300,6 @@ function ReactiveSystem:triggerDeps(firstKey, secondKey)
     end
 end
 
--- 清理依赖关系：firstKey可能是proxyTable，也可能是computedTable
-function ReactiveSystem:clearDeps(firstKey, secondKey)
-    if not self.deps[firstKey] then
-        return
-    end
-
-    if not self.deps[firstKey][secondKey] then
-        self.deps[firstKey] = nil
-        return
-    end
-
-    self.deps[firstKey][secondKey] = nil
-end
-
 -- 订阅副作用函数
 function ReactiveSystem:subscribe(t, key, effect)
     if not self.effects[t] then
