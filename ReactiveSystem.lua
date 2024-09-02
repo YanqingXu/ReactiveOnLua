@@ -137,8 +137,6 @@ function Proxy.new(realTable)
     local proxyTable = {}
     proxyTable._real = realTable or {}
     setmetatable(proxyTable, Proxy)
-
-    ReactiveSystem.deps[proxyTable] = {}
     return proxyTable
 end
 
@@ -229,8 +227,6 @@ function Computed.new(getter, setter)
     computedTable._real = realTable
 
     setmetatable(computedTable, Computed)
-
-    ReactiveSystem.deps[computedTable] = {}
     return computedTable
 end
 
@@ -256,6 +252,7 @@ function ReactiveSystem:buildDeps(firstKey, secondKey, targetComputedTable)
     end
 
     if not self.deps[firstKey] then
+        self.deps[firstKey] = {}
         return
     end
 
