@@ -253,7 +253,6 @@ function ReactiveSystem:buildDeps(firstKey, secondKey, targetComputedTable)
 
     if not self.deps[firstKey] then
         self.deps[firstKey] = {}
-        return
     end
 
     if not self.deps[firstKey][secondKey] then
