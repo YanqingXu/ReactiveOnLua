@@ -90,6 +90,9 @@ local watchReactive = nil   -- 监视Reactive对象的变化
 -- 副作用函数指针，用于绑定与之关联的响应式对象
 local effectFuncPtr = nil
 
+-- watchRef的副作用函数应当只与ref对象绑定，因此需要一个锁来控制
+local watchRefLock = false
+
 -- 计算属性栈，用于临时存储计算属性对象
 local computedTableStack = Stack.new()
 
@@ -102,6 +105,11 @@ Proxy.__index = function(proxyTable, key)
 
     -- 检测是否有副作用函数绑定
     if effectFuncPtr then
+        local isSubscribed = ReactiveSystem:isSubscribed(effectFuncPtr)
+        if watchRefLock and isSubscribed then
+            return rawget(proxyTable._real, key)
+        end
+
         ReactiveSystem:subscribe(proxyTable, key, effectFuncPtr)
     end
 
@@ -315,6 +323,21 @@ function ReactiveSystem:subscribe(t, key, effect)
     table.insert(self.effects[t][key], effect)
 end
 
+-- 副作用函数是否已被订阅
+function ReactiveSystem:isSubscribed(effect)
+    for _, effects in pairs(self.effects) do
+        for _, effectList in pairs(effects) do
+            for _, v in ipairs(effectList) do
+                if v == effect then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
 -- 取消订阅
 function ReactiveSystem:unsubscribe(t, key, effect)
     if not self.effects[t] then
@@ -436,9 +459,11 @@ end
 
 -- 监视ref的变化
 watchRef = function(refData, callback)
+    watchRefLock = true
     watch(function(oldValue)
         callback(refData.value, oldValue)
     end)
+    watchRefLock = false
 end
 
 -- 监视计算属性的变化
