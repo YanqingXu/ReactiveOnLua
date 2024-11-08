@@ -1,5 +1,7 @@
-local Stack = require("Stack")
-
+----------------------------------------------------
+---模仿Vue3.0的响应式系统
+---注意事项：使用watch系列函数时，回调函数尽量简单，避免在回调逻辑里继续调用watch
+----------------------------------------------------
 --[[ 
 响应式系统
     1. 响应式对象：proxyTable，实质为Proxy代理，劫持get和set操作
@@ -9,7 +11,7 @@ local Stack = require("Stack")
     5. 计算属性懒计算：访问计算属性时，如果有缓存则直接返回，否则调用getter重新计算
                       当计算属性依赖的响应式对象发生变化时，清除缓存
 --]]
-
+local Stack = require("xf.engine.Stack")
 local ReactiveSystem = {
     --[[ 
         副作用函数表: effects为副作用函数，key为proxyTable，value为key对应的副作用函数列表
@@ -87,11 +89,8 @@ local watchRef = nil        -- 监视Ref对象的变化
 local watchComputed = nil   -- 监视计算属性的变化
 local watchReactive = nil   -- 监视Reactive对象的变化
 
--- 副作用函数指针，用于绑定与之关联的响应式对象
-local effectFuncPtr = nil
-
--- watchRef的副作用函数应当只与ref对象绑定，因此需要一个锁来控制
-local watchRefLock = false
+-- 副作用函数指针栈，用于绑定与之关联的响应式对象
+local effectFuncPtrStack = Stack.new()
 
 -- 计算属性栈，用于临时存储计算属性对象
 local computedTableStack = Stack.new()
@@ -104,12 +103,8 @@ Proxy.__index = function(proxyTable, key)
     end
 
     -- 检测是否有副作用函数绑定
+    local effectFuncPtr = effectFuncPtrStack:top()
     if effectFuncPtr then
-        local isSubscribed = ReactiveSystem:isSubscribed(effectFuncPtr)
-        if watchRefLock and isSubscribed then
-            return rawget(proxyTable._real, key)
-        end
-
         ReactiveSystem:subscribe(proxyTable, key, effectFuncPtr)
     end
 
@@ -136,7 +131,7 @@ Proxy.__newindex = function(proxyTable, key, value)
         ReactiveSystem:triggerDeps(proxyTable, key)
 
         -- 通知与之绑定的副作用函数重新执行
-        ReactiveSystem:publish(proxyTable, key, oldValue) 
+        ReactiveSystem:publish(proxyTable, key, oldValue)
     end
 end
 
@@ -161,6 +156,7 @@ Computed.__index = function(computedTable, key)
     end
 
     -- 检测绑定副作用函数
+    local effectFuncPtr = effectFuncPtrStack:top()
     if effectFuncPtr then
         ReactiveSystem:subscribe(computedTable, key, effectFuncPtr)
     end
@@ -323,21 +319,6 @@ function ReactiveSystem:subscribe(t, key, effect)
     table.insert(self.effects[t][key], effect)
 end
 
--- 副作用函数是否已被订阅
-function ReactiveSystem:isSubscribed(effect)
-    for _, effects in pairs(self.effects) do
-        for _, effectList in pairs(effects) do
-            for _, v in ipairs(effectList) do
-                if v == effect then
-                    return true
-                end
-            end
-        end
-    end
-
-    return false
-end
-
 -- 取消订阅
 function ReactiveSystem:unsubscribe(t, key, effect)
     if not self.effects[t] then
@@ -364,6 +345,31 @@ function ReactiveSystem:unsubscribe(t, key, effect)
     end
 end
 
+-- 清除副作用函数
+local clearEffect = function(effectPtr)
+    if not effectPtr then
+        return
+    end
+
+    for t, effects in pairs(ReactiveSystem.effects) do
+        for key, effectList in pairs(effects) do
+            for i = #effectList, 1, -1 do
+                if effectList[i] == effectPtr then
+                    table.remove(effectList, i)
+                end
+            end
+
+            if #effectList == 0 then
+                effects[key] = nil
+            end
+        end
+
+        if next(effects) == nil then
+            ReactiveSystem.effects[t] = nil
+        end
+    end
+end
+
 -- 发布副作用函数
 function ReactiveSystem:publish(t, key, oldValue)
     if not self.effects[t] then
@@ -379,7 +385,7 @@ function ReactiveSystem:publish(t, key, oldValue)
     end
 end
 
--- reactive函数
+-- 返回一个对象的响应式代理。
 reactive = function(target, shallow)
     if shallow then
         return Proxy.new(target)
@@ -398,16 +404,16 @@ reactive = function(target, shallow)
     return target
 end
 
--- ref函数
+-- 接受一个内部值，返回一个响应式的、可更改的 ref 对象，此对象只有一个指向其内部值的属性 .value。
 ref = function(value)
     return reactive({ value = value })
 end
 
--- 监视响应式数据变化
+-- 立即运行一个函数，同时响应式地追踪其依赖，并在依赖更改时重新执行。VUE3.0的watchEffect
 watch = function(effect)
-    effectFuncPtr = effect
+    effectFuncPtrStack:push(effect)
     effect()
-    effectFuncPtr = nil
+    effectFuncPtrStack:pop()
 end
 
 -- 取消监视
@@ -415,7 +421,7 @@ unwatch = function(t, key, effect)
     ReactiveSystem:unsubscribe(t, key, effect)
 end
 
--- 计算属性
+-- 计算属性：VUE3.0的computed
 computed = function(options)
     local getter = nil
     local setter = nil
@@ -457,38 +463,21 @@ clearComputed = function(computedTable)
     ReactiveSystem.caches[computedTable] = nil
 end
 
--- 监视ref的变化
+-- VUE3.0中的watch函数, 参数为Ref对象， 默认是懒侦听的，即仅在侦听源发生变化时才执行回调函数。
 watchRef = function(refData, callback)
-    watchRefLock = true
-    watch(function(oldValue)
+    ReactiveSystem:subscribe(refData, "value", function(oldValue)
         callback(refData.value, oldValue)
     end)
-    watchRefLock = false
 end
 
--- 监视计算属性的变化
-watchComputed = function(getter, callback)
-    local computedValue = nil
-    local oldValue = nil
-
-    if type(getter) == "function" then
-        computedValue = computed(getter)
-    elseif isComputed(getter) then
-        computedValue = getter
-    else
-        return
-    end
-
-    watch(function()
-        local newValue = computedValue.value
-        callback(newValue, oldValue)
-        oldValue = newValue
+-- VUE3.0中的watch函数, 参数为计算属性， 默认是懒侦听的，即仅在侦听源发生变化时才执行回调函数。
+watchComputed = function(computedValue, callback)
+    ReactiveSystem:subscribe(computedValue, "value", function(oldValue)
+        callback(computedValue.value, oldValue)
     end)
-
-    return computedValue
 end
 
--- 监视Reactive对象的变化
+-- VUE3.0中的watch函数, 参数响应式对象， 默认是懒侦听的，即仅在侦听源发生变化时才执行回调函数。
 watchReactive = function(reactiveObj, callback)
     -- 存储局部计算属性
     local computedValues = {}
@@ -532,6 +521,7 @@ return {
 
     watch = watch,
     unwatch = unwatch,
+    clearEffect = clearEffect,
     
     watchRef = watchRef,
     watchComputed = watchComputed,
