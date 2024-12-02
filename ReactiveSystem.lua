@@ -31,7 +31,7 @@ local ReactiveSystem = {
             ...
         }
     --]]
-    effects = {},           
+    effects = {},
 
     --[[
         计算属性缓存: computedTable为计算属性，本质是一个代理表，key固定为"value"，value为计算属性的值
@@ -317,6 +317,11 @@ function ReactiveSystem:subscribe(t, key, effect)
     end
 
     table.insert(self.effects[t][key], effect)
+
+    -- 返回一个清理函数
+    return function ()
+        self:unsubscribe(t, key, effect)
+    end
 end
 
 -- 取消订阅
@@ -465,14 +470,14 @@ end
 
 -- VUE3.0中的watch函数, 参数为Ref对象， 默认是懒侦听的，即仅在侦听源发生变化时才执行回调函数。
 watchRef = function(refData, callback)
-    ReactiveSystem:subscribe(refData, "value", function(oldValue)
+    return ReactiveSystem:subscribe(refData, "value", function(oldValue)
         callback(refData.value, oldValue)
     end)
 end
 
 -- VUE3.0中的watch函数, 参数为计算属性， 默认是懒侦听的，即仅在侦听源发生变化时才执行回调函数。
 watchComputed = function(computedValue, callback)
-    ReactiveSystem:subscribe(computedValue, "value", function(oldValue)
+    return ReactiveSystem:subscribe(computedValue, "value", function(oldValue)
         callback(computedValue.value, oldValue)
     end)
 end
