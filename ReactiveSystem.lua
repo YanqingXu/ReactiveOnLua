@@ -11,7 +11,7 @@
     5. 计算属性懒计算：访问计算属性时，如果有缓存则直接返回，否则调用getter重新计算
                       当计算属性依赖的响应式对象发生变化时，清除缓存
 --]]
-local Stack = require("xf.engine.Stack")
+local Stack = require("Stack")
 local ReactiveSystem = {
     --[[ 
         副作用函数表: effects为副作用函数，key为proxyTable，value为key对应的副作用函数列表
