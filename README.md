@@ -108,7 +108,7 @@ ReactiveSystem 基于以下几个核心机制：
 
 ### 基本用法示例
 ```lua
-local ReactiveSystem = require("xf.engine.ReactiveSystem")
+local ReactiveSystem = require("ReactiveSystem")
 local ref = ReactiveSystem.ref
 local reactive = ReactiveSystem.reactive
 local computed = ReactiveSystem.computed
@@ -133,7 +133,7 @@ count.value = 2  -- 输出: Count changed from 1 to 2, Double count is now 4
 
 ### UI绑定示例
 ```lua
-local ReactiveSystem = require("xf.engine.ReactiveSystem")
+local ReactiveSystem = require("ReactiveSystem")
 local ref = ReactiveSystem.ref
 local watchRef = ReactiveSystem.watchRef
 
